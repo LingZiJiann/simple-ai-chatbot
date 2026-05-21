@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     scraper_user_agent: str = "simple-ai-chatbot-scraper/0.1"
     scraper_default_depth: int = 2
     scraper_default_max_pages: int = 20
+    milvus_db_path: str = "./data/milvus.db"
 
 
 settings = Settings()
