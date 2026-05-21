@@ -1,3 +1,9 @@
+"""Router for web scraping endpoints.
+
+This module handles HTTP requests for scraping web pages, crawling websites,
+and chunking the extracted content for further processing.
+"""
+
 from fastapi import APIRouter, HTTPException
 
 from src.utils.logger import get_logger
@@ -12,6 +18,20 @@ logger = get_logger("scraper.router")
 
 @router.post("", response_model=ScrapeResponse)
 async def scrape(request: ScrapeRequest) -> ScrapeResponse:
+    """Scrape and chunk web pages starting from a seed URL.
+
+    Crawls a website starting from the provided URL up to the specified depth,
+    extracts product information, and chunks the page content.
+
+    Args:
+        request: Scrape request containing URL, depth limit, max pages, and link pattern.
+
+    Returns:
+        ScrapeResponse containing the seed URL, number of pages crawled, and extracted chunks.
+
+    Raises:
+        HTTPException: If the crawl operation fails (status 500).
+    """
     seed_url = str(request.url)
     logger.info(
         f"Scrape request: url={seed_url} depth={request.depth} max_pages={request.max_pages}"

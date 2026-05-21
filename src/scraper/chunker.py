@@ -8,6 +8,18 @@ MAX_CHARS = 500
 
 
 def chunk_page(enriched: ScrapedPage) -> list[Chunk]:
+    """Convert a scraped page into semantically meaningful chunks.
+
+    Splits the product description into chunks within size constraints and
+    creates Chunk objects with metadata from the page.
+
+    Args:
+        enriched: A ScrapedPage object containing product information.
+
+    Returns:
+        A list of Chunk objects, each representing a portion of the page
+        with associated metadata (URL, title, price, etc.).
+    """
     fragments = _split(enriched.prod_desc)
     chunks = []
     for i, frag in enumerate(fragments):
@@ -29,6 +41,18 @@ def chunk_page(enriched: ScrapedPage) -> list[Chunk]:
 
 
 def _split(text: str) -> list[str]:
+    """Split text into chunks respecting size constraints and semantic boundaries.
+
+    Intelligently splits text by preferring paragraph breaks first, then
+    sentences, while keeping chunk sizes between MIN_CHARS and MAX_CHARS.
+
+    Args:
+        text: The text to split into chunks.
+
+    Returns:
+        A list of text chunks, each within the size constraints. Returns
+        a single-element list with the original text if it cannot be split.
+    """
     if not text.strip():
         return [""]
     if len(text) <= MIN_CHARS:
