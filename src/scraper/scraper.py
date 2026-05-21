@@ -62,11 +62,19 @@ def _extract_page_data(soup: BeautifulSoup, url: str) -> dict:
         if desc_p:
             prod_desc = desc_p.get_text(strip=True)
 
+    prod_price_div = soup.find("div", class_="product_price")
+    prod_price = ""
+    if prod_price_div:
+        price_p = prod_price_div.find("p", class_="price_color")
+        if price_p:
+            prod_price = re.sub(r"[^0-9.]", "", price_p.get_text(strip=True))
+
     return {
         "html": str(soup),
         "url": url,
         "page_title": page_title,
         "prod_desc": prod_desc,
+        "price_gbp": float(prod_price),
     }
 
 
