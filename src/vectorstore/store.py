@@ -20,6 +20,11 @@ class VectorStore:
     """Milvus Lite vector store wrapper with embedding support."""
 
     def __init__(self, db_path: str) -> None:
+        """Initialize VectorStore with Milvus client and embedding model.
+
+        Args:
+            db_path: Path to the Milvus database directory.
+        """
         self._client = MilvusClient(db_path)
         self._model = SentenceTransformer("paraphrase-MiniLM-L6-v2")
         self._ensure_collection()
@@ -50,9 +55,15 @@ class VectorStore:
         logger.info("Created Milvus collection '%s'", COLLECTION_NAME)
 
     def upsert_chunks(self, chunks: list[Chunk]) -> int:
-        """Embed and upsert chunks. Returns number of rows written.
+        """Embed and upsert chunks into the vector store.
 
         This method is synchronous — call via asyncio.to_thread from async code.
+
+        Args:
+            chunks: List of Chunk objects to embed and store.
+
+        Returns:
+            Number of rows written to the collection.
         """
         if not chunks:
             return 0
