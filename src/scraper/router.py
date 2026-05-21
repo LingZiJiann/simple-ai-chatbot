@@ -1,9 +1,8 @@
-import re
-
 from fastapi import APIRouter, HTTPException
 
 from src.utils.logger import get_logger
 
+from .chunker import chunk_page
 from .schemas import ScrapedPage, ScrapeRequest, ScrapeResponse
 from .scraper import crawl
 
@@ -26,18 +25,18 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
         logger.error(f"Crawl failed for {seed_url}: {exc}")
         raise HTTPException(status_code=500, detail=f"Crawl failed: {exc}") from exc
 
-    scraped_pages = [
-        ScrapedPage(
+    all_chunks = []
+    for p in pages:
+        scraped = ScrapedPage(
             url=p["url"],
             page_title=p["page_title"],
-            prod_desc=re.sub(
-                r"[^a-zA-Z0-9 ]", "", f"{p['page_title']} {p['prod_desc']}"
-            ).strip(),
+            prod_desc=p["prod_desc"],
+            price_gbp=p.get("price_gbp"),
         )
-        for p in pages
-    ]
+        all_chunks.extend(chunk_page(scraped))
+
     logger.info(f"Completed: {len(pages)} pages for {seed_url}")
 
     return ScrapeResponse(
-        seed_url=seed_url, pages_crawled=len(pages), pages=scraped_pages, chunks=[]
+        seed_url=seed_url, pages_crawled=len(pages), chunks=all_chunks
     )
