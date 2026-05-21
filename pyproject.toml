@@ -10,6 +10,8 @@ dependencies = [
     "httpx>=0.28.1",
     "lxml>=6.1.1",
     "pydantic-settings>=2.14.1",
+    "pymilvus[milvus_lite]>=3.0.0",
+    "sentence-transformers>=2.2.0",
     "tenacity>=9.1.4",
     "uvicorn[standard]>=0.47.0",
 ]
