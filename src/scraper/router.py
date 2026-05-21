@@ -4,7 +4,9 @@ This module handles HTTP requests for scraping web pages, crawling websites,
 and chunking the extracted content for further processing.
 """
 
-from fastapi import APIRouter, HTTPException
+import asyncio
+
+from fastapi import APIRouter, HTTPException, Request
 
 from src.utils.logger import get_logger
 
@@ -17,14 +19,17 @@ logger = get_logger("scraper.router")
 
 
 @router.post("", response_model=ScrapeResponse)
-async def scrape(request: ScrapeRequest) -> ScrapeResponse:
+async def scrape(
+    request: Request,
+    scrape_req: ScrapeRequest,
+) -> ScrapeResponse:
     """Scrape and chunk web pages starting from a seed URL.
 
     Crawls a website starting from the provided URL up to the specified depth,
     extracts product information, and chunks the page content.
 
     Args:
-        request: Scrape request containing URL, depth limit, max pages, and link pattern.
+        scrape_req: Scrape request containing URL, depth limit, max pages, and link pattern.
 
     Returns:
         ScrapeResponse containing the seed URL, number of pages crawled, and extracted chunks.
@@ -32,14 +37,15 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
     Raises:
         HTTPException: If the crawl operation fails (status 500).
     """
-    seed_url = str(request.url)
+    store = request.app.state.vector_store
+    seed_url = str(scrape_req.url)
     logger.info(
-        f"Scrape request: url={seed_url} depth={request.depth} max_pages={request.max_pages}"
+        f"Scrape request: url={seed_url} depth={scrape_req.depth} max_pages={scrape_req.max_pages}"
     )
 
     try:
         pages = await crawl(
-            seed_url, request.depth, request.max_pages, request.link_pattern
+            seed_url, scrape_req.depth, scrape_req.max_pages, scrape_req.link_pattern
         )
     except Exception as exc:
         logger.error(f"Crawl failed for {seed_url}: {exc}")
@@ -54,6 +60,10 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
             price_gbp=p.get("price_gbp"),
         )
         all_chunks.extend(chunk_page(scraped))
+
+    if all_chunks:
+        upserted = await asyncio.to_thread(store.upsert_chunks, all_chunks)
+        logger.info(f"Stored {upserted} chunks for {seed_url}")
 
     logger.info(f"Completed: {len(pages)} pages for {seed_url}")
 
