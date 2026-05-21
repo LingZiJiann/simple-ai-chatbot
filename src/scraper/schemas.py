@@ -17,9 +17,20 @@ class ScrapedPage(BaseModel):
     url: str
     page_title: str
     prod_desc: str
+    price_gbp: float | None = None
+
+
+class Chunk(BaseModel):
+    chunk_id: str
+    source_url: str
+    chunk_index: int = Field(ge=0)
+    text: str
+    char_count: int
+    page_title: str
+    price_gbp: float | None = None
 
 
 class ScrapeResponse(BaseModel):
     seed_url: str
     pages_crawled: int
-    pages: list[ScrapedPage]
+    chunks: list[Chunk] = Field(default_factory=list)
