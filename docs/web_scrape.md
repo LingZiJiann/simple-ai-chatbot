@@ -2,7 +2,13 @@
 
 ## Overview
 
-The web scraping module provides a FastAPI-based service for crawling websites, extracting structured product information, and automatically chunking content for downstream processing (e.g., embedding, indexing).
+The web scraping module provides a FastAPI-based service for crawling websites, extracting structured product information, automatically chunking content, and converting chunks into embeddings for vector-based semantic search.
+
+The complete pipeline includes:
+1. **Web Scraping**: Breadth-first crawling of websites with politeness controls
+2. **Chunking**: Semantic segmentation of extracted content into manageable pieces
+3. **Embedding**: Conversion of chunks into vector embeddings using a language model
+4. **Vector Storage**: Persistent storage in Milvus vector database for fast similarity search
 
 The system performs breadth-first crawling with respect for server resources through politeness delays and domain-level rate limiting.
 
@@ -15,7 +21,9 @@ The system performs breadth-first crawling with respect for server resources thr
 1. **Scraper** (`scraper.py`) - Core crawling logic
 2. **Router** (`router.py`) - FastAPI endpoint definitions
 3. **Chunker** (`chunker.py`) - Content segmentation
-4. **Schemas** (`schemas.py`) - Pydantic data models
+4. **Embedder** (`embedder.py`) - Chunk-to-embedding conversion using language models
+5. **Vector Store** (`vectorstore/store.py`) - Milvus integration for vector persistence
+6. **Schemas** (`schemas.py`) - Pydantic data models
 
 ---
 
@@ -55,6 +63,16 @@ Each chunk includes metadata for traceability:
 - Source URL
 - Page title
 - Price (if available)
+
+### Embedding & Vector Storage
+
+After chunking, each chunk is converted into a dense vector embedding:
+- **Embedding Model**: Uses a language model to generate semantic embeddings
+- **Vector Dimension**: Fixed-size dense vectors enabling similarity search
+- **Metadata Preservation**: Original chunk metadata (URL, title, price) attached to each embedding
+- **Vector Database**: Embeddings stored in Milvus for efficient approximate nearest-neighbor search
+
+This enables semantic search capabilities where users can find relevant content based on meaning rather than keyword matching.
 
 ---
 
@@ -131,6 +149,36 @@ curl -X POST http://localhost:8000/scrape \
     "max_pages": 10
   }'
 ```
+
+---
+
+## Vector Store Integration
+
+After chunks are extracted via `/scrape`, they can be converted to embeddings and stored in Milvus for semantic search.
+
+### Embedding Pipeline
+
+The embedding pipeline accepts the chunks from the scraper and:
+1. Generates vector embeddings for each chunk using a language model
+2. Stores the embeddings in the Milvus vector database
+3. Maintains chunk metadata alongside the vectors for result attribution
+4. Enables fast approximate nearest-neighbor search for semantic queries
+
+### Vector Database (Milvus)
+
+**Milvus** is an open-source vector database optimized for:
+- High-dimensional vector similarity search
+- Low-latency queries across millions of vectors
+- Horizontal scalability
+
+Embeddings are indexed in Milvus with:
+- Chunk text embeddings (primary search key)
+- Chunk metadata (source URL, page title, price)
+- Unique chunk IDs for traceability
+
+### Usage
+
+Scraped chunks are automatically converted to embeddings and stored in Milvus, making them searchable via vector similarity queries (e.g., "find chunks similar to this query").
 
 ---
 
@@ -379,5 +427,7 @@ Integration tests should mock HTTP responses or target a test server.
 - **JavaScript Rendering**: Use Selenium/Playwright for JS-heavy sites
 - **Caching**: LRU cache for repeated URLs
 - **Structured Data**: Extract JSON-LD, microdata
-- **Content Deduplication**: Identify and merge similar pages
+- **Content Deduplication**: Identify and merge similar chunks based on embedding similarity
 - **Proxy Support**: Rotate proxies for large crawls
+- **Multi-Modal Embeddings**: Support image and document embedding models
+- **Vector Search API**: Expose semantic search endpoints for querying embeddings
