@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from config.config import settings
+from src.retrieval.router import router as retrieval_router
 from src.scraper.router import router as scraper_router
 from src.utils.logger import setup_logger
 from src.vectorstore.store import VectorStore
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Simple AI Chatbot API", version="0.1.0", lifespan=lifespan)
 app.include_router(scraper_router, prefix="/api/v1")
+app.include_router(retrieval_router, prefix="/api/v1")
 
 
 @app.get("/health")
