@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     scraper_default_depth: int = 2
     scraper_default_max_pages: int = 20
     milvus_db_path: str = "./data/milvus.db"
+    api_base_url: str = "http://localhost:8000"
 
 
 settings = Settings()
