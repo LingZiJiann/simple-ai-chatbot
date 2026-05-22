@@ -28,6 +28,7 @@ class VectorStore:
         self._client = MilvusClient(db_path)
         self._model = SentenceTransformer("paraphrase-MiniLM-L6-v2")
         self._ensure_collection()
+        self._client.load_collection(COLLECTION_NAME)
 
     def _ensure_collection(self) -> None:
         """Create collection with schema and COSINE flat index if not exists."""
@@ -89,6 +90,47 @@ class VectorStore:
         count = result.get("upsert_count", len(rows))
         logger.info("Upserted %d chunks into '%s'", count, COLLECTION_NAME)
         return count
+
+    def search(self, query: str, top_k: int = 5) -> list[dict]:
+        """Search for chunks similar to the query using cosine similarity.
+
+        This method is synchronous — call via asyncio.to_thread from async code.
+
+        Args:
+            query: Natural language query text.
+            top_k: Number of top results to return (1-20).
+
+        Returns:
+            List of dicts with chunk data, distance score, and price converted back from sentinel.
+        """
+        vector = self._model.encode([query], convert_to_tensor=False)[0].tolist()
+        results = self._client.search(
+            collection_name=COLLECTION_NAME,
+            data=[vector],
+            anns_field="vector",
+            limit=top_k,
+            output_fields=[
+                "chunk_id",
+                "source_url",
+                "chunk_index",
+                "text",
+                "char_count",
+                "page_title",
+                "price_gbp",
+            ],
+        )
+        hits = [
+            {
+                **hit["entity"],
+                "score": hit["distance"],
+                "price_gbp": None
+                if hit["entity"]["price_gbp"] == _PRICE_NULL
+                else hit["entity"]["price_gbp"],
+            }
+            for hit in results[0]
+        ]
+        hits.sort(key=lambda x: x["score"], reverse=True)
+        return hits
 
     def close(self) -> None:
         """Close the Milvus client connection."""
