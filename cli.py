@@ -1,8 +1,10 @@
-"""Interactive RAG chatbot CLI for inspecting retrieved chunks."""
+"""Interactive RAG chatbot CLI with LLM-powered question answering."""
 
+import anthropic
 import httpx
 
 from config.config import settings
+from src.llm.generator import AnswerGenerator
 
 
 RETRIEVE_ENDPOINT = f"{settings.api_base_url}/api/v1/retrieve"
@@ -62,7 +64,10 @@ def display_chunks(chunks: list[dict]) -> None:
 
 def main() -> None:
     """Run the interactive REPL."""
-    print("RAG Chatbot (chunk viewer mode)")
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    generator = AnswerGenerator(client)
+
+    print("RAG Chatbot")
     print(f"Connected to {settings.api_base_url}")
     print("Type your query and press Enter. Type 'exit' or Ctrl+C to quit.")
     print("─" * 62)
@@ -85,6 +90,8 @@ def main() -> None:
 
             chunks = retrieve(query)
             display_chunks(chunks)
+            if chunks:
+                generator.generate(query, chunks)
 
     except KeyboardInterrupt:
         print("\n")
