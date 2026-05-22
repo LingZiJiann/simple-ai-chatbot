@@ -402,26 +402,6 @@ logger = get_logger("scraper")
 
 ---
 
-## Testing
-
-Unit tests can cover:
-
-```python
-from src.scraper.scraper import normalize_url, _extract_page_data
-from src.scraper.chunker import chunk_page, _split
-
-# Test URL normalization
-assert normalize_url("HTTPS://Example.COM/path#frag") == "https://example.com/path"
-
-# Test text splitting
-chunks = _split("This is a sentence. This is another." * 20)
-assert all(MIN_CHARS <= len(c) <= MAX_CHARS for c in chunks)
-```
-
-Integration tests should mock HTTP responses or target a test server.
-
----
-
 ## Future Enhancements
 
 - **JavaScript Rendering**: Use Selenium/Playwright for JS-heavy sites
