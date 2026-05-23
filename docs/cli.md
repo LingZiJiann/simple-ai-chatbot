@@ -2,11 +2,13 @@
 
 ## Overview
 
-The CLI provides an interactive command-line interface for a complete RAG (Retrieval-Augmented Generation) chatbot. Users enter natural language queries, the system retrieves relevant chunks from the vector database, and Claude Haiku generates a grounded answer based on those chunks.
+The CLI provides an interactive command-line interface for a complete RAG (Retrieval-Augmented Generation) chatbot with **multi-turn conversation support**. Users enter natural language queries, the system retrieves relevant chunks from the vector database, and Claude Haiku generates a grounded answer based on those chunks. The chatbot maintains conversation history and intelligently rewrites follow-up questions to improve retrieval accuracy.
 
 Key features:
 - **Semantic Search**: Retrieves the top 5 most relevant chunks using cosine similarity
 - **LLM-Powered Answers**: Claude Haiku generates contextual answers based on retrieved chunks
+- **Multi-Turn Conversation**: Maintains conversation history across turns; Claude references prior answers
+- **Query Rewriting**: Rewrites vague follow-up questions (e.g., "tell me more about that") into standalone queries for better retrieval
 - **Streamed Responses**: Answers stream word-by-word for a natural chatbot feel
 - **Interactive Loop**: Run multiple queries in one session without restarting
 - **No Server Required**: Works with a running FastAPI server; server holds Milvus connection
@@ -27,7 +29,9 @@ Key features:
 ```
 User Input (Terminal)
     ↓
-[CLI → HTTP POST /api/v1/retrieve]
+[If history exists: Rewrite query via Claude Haiku (cheap LLM call)]
+    ↓
+[CLI → HTTP POST /api/v1/retrieve with (original or rewritten) query]
     ↓
 Query Embedding & Vector Search (Milvus via API)
     ↓
@@ -35,11 +39,13 @@ Ranked Chunks (JSON response)
     ↓
 [Display Chunks]
     ↓
-[AnswerGenerator → Claude Haiku API]
+[AnswerGenerator → Claude Haiku API with history + chunks]
     ↓
-LLM generates answer using chunks as context
+LLM generates answer using conversation history + chunks as context
     ↓
 Stream answer to Terminal (word-by-word)
+    ↓
+Store original query and answer in conversation history (in-memory)
 ```
 
 **Architecture Benefits**:
@@ -115,15 +121,41 @@ maximize their experience while minimizing costs.
 
 Query> tell me more about the europe guide
 
+  #1  [score: 0.91]  Budget Travel Guide to Europe
+      £12.99  |  https://books.toscrape.com/catalogue/travel_book_1/...
+      "Budget Travel Guide to Europe: Covers destinations like France, Italy..."
+
+  #2  [score: 0.88]  Budget Travel Guide to Europe
+      £12.99  |  https://books.toscrape.com/catalogue/travel_book_1/...
+      "Budget Travel Guide to Europe: Money-saving tips for accommodations..."
+
+  2 chunks retrieved.
+
 Answer
 ────────────────────────────────────────────────────────────
-Based on the context provided, the Budget Travel Guide to Europe covers various
-destinations and travel strategies for exploring Europe affordably. This guide
-appears to be comprehensive and is priced at £12.99, making it an accessible
-resource for budget travelers interested in European destinations.
+The Budget Travel Guide to Europe provides practical information for budget
+travelers exploring European destinations. It covers specific destinations like
+France and Italy, along with valuable money-saving tips for accommodations.
+Priced at £12.99, it's an affordable resource that helps travelers maximize
+their budget while experiencing Europe fully.
+
+Query> what is the price?
+
+  #1  [score: 0.85]  Budget Travel Guide to Europe
+      £12.99  |  https://books.toscrape.com/catalogue/travel_book_1/...
+      "Budget Travel Guide to Europe is priced at £12.99..."
+
+  1 chunk retrieved.
+
+Answer
+────────────────────────────────────────────────────────────
+The Budget Travel Guide to Europe, which we've been discussing, is priced at
+£12.99, making it quite affordable for travelers on a budget.
 
 Query> exit
 ```
+
+**Note**: In the example above, turn 2 ("tell me more about the europe guide") is automatically rewritten to "Budget Travel Guide to Europe features and content" before retrieval, which returns much more relevant chunks. Turn 3 ("what is the price?") is rewritten to include context about the Europe guide, and Claude naturally references prior answers.
 
 ---
 
@@ -131,16 +163,18 @@ Query> exit
 
 ### Interactive Loop
 
-The CLI operates as an interactive REPL:
+The CLI operates as an interactive REPL with multi-turn conversation support:
 
 1. **Startup**: Initializes Anthropic client, displays welcome message, connects to API
 2. **Query Prompt**: `Query>` prompt appears, waiting for user input
-3. **Input**: Type a natural language query (e.g., "affordable travel guides", "python books")
-4. **Retrieval**: Top 5 chunks are fetched from the vector database
-5. **Display Chunks**: Retrieved chunks displayed with scores and metadata
-6. **LLM Response**: Claude Haiku generates an answer using chunks as context, streamed to terminal
-7. **Loop**: Prompt appears again for the next query
-8. **Exit**: Type `exit`, `quit`, or press `Ctrl+C` to quit gracefully
+3. **Input**: Type a natural language query (e.g., "affordable travel guides", "tell me more about that")
+4. **Query Rewriting** (turn 2+): If conversation history exists, uses Claude Haiku to rewrite the query into a standalone query. For example, "tell me more about the europe guide" becomes "Budget Travel Guide to Europe features and content". First turn skips this step.
+5. **Retrieval**: Top 5 chunks are fetched from the vector database using the (possibly rewritten) query
+6. **Display Chunks**: Retrieved chunks displayed with scores and metadata
+7. **LLM Response**: Claude Haiku generates an answer using chunks + conversation history as context, streamed to terminal
+8. **History Storage**: Original query and answer are stored in memory for future context
+9. **Loop**: Prompt appears again for the next query
+10. **Exit**: Type `exit`, `quit`, or press `Ctrl+C` to quit gracefully
 
 ### Output Format
 
@@ -181,9 +215,11 @@ Query> [Ctrl+C] → gracefully exits
 **Query Tips**:
 - Use natural language (the embedding model understands semantics)
 - Longer, more specific queries yield more relevant results
+- Follow-up questions like "tell me more" work naturally due to query rewriting
 - If no chunks are found, no LLM call is made (avoids wasted API calls)
 - Empty input is ignored (no error, just re-prompts)
 - Queries are case-insensitive
+- Conversation history is stored in-memory and cleared when you exit the CLI
 
 ---
 
@@ -224,9 +260,15 @@ The CLI uses these fixed defaults:
 | `top_k` | `5` | Number of chunks to retrieve |
 | `model` | `claude-haiku-4-5-20251001` | Claude Haiku model for answers |
 | `max_tokens` | `512` | Maximum tokens in LLM response |
+| `rewrite_max_tokens` | `128` | Maximum tokens for query rewriting (turn 2+) |
 | `timeout` | `10.0s` | HTTP request timeout |
 
-To modify these, edit the `retrieve()` function in `cli.py` or `generate()` method in `src/llm/generator.py`.
+To modify these, edit:
+- `retrieve()` function in `cli.py` for retrieval parameters
+- `rewrite_query()` method in `src/llm/generator.py` for query rewriting
+- `generate()` method in `src/llm/generator.py` for answer generation
+
+**Note on Performance**: Query rewriting adds a small latency on turns 2+ (typically 0.5–1s) since it requires an extra LLM call to Anthropic. Turn 1 has no rewriting overhead.
 
 ---
 
@@ -244,16 +286,37 @@ See [retrieval.md](retrieval.md) for endpoint details.
 
 ### LLM Answer Generation
 
-The `AnswerGenerator` class (`src/llm/generator.py`):
+The `AnswerGenerator` class (`src/llm/generator.py`) has two methods:
+
+**`rewrite_query(query, history)` — Query Rewriting (Turn 2+)**:
+1. Called only when conversation history exists (skipped on turn 1)
+2. Takes the user's raw follow-up query and conversation history
+3. Makes a cheap LLM call (max 128 tokens) to rewrite the query as a standalone search query
+4. Example: "tell me more about the europe guide" → "Budget Travel Guide to Europe features and content"
+5. The rewritten query is used for retrieval (better vector search results)
+6. Returns the original query if rewriting fails
+
+**`generate(query, chunks, history=None)` — Answer Generation**:
 1. Takes an Anthropic client and initializes once at CLI startup
-2. Receives query and retrieved chunks
+2. Receives the original query, retrieved chunks, and optional conversation history
 3. Builds a context string from chunks (title + text for each)
-4. Calls Claude Haiku with system prompt: "Answer using only the provided context"
-5. Streams the response word-by-word to terminal
-6. Only runs if chunks are found (no wasted API calls on empty results)
+4. Constructs messages list: `[history turns] + [current turn with chunks]`
+5. Calls Claude Haiku with system prompt and full conversation context
+6. Streams the response word-by-word to terminal
+7. Returns the full answer text as a string (for storage in history)
+8. Only runs if chunks are found (no wasted API calls on empty results)
 
 **System Prompt**:
-> "You are a helpful assistant. Answer the user's question using only the provided context. If the context does not contain enough information, say so."
+> "You are a helpful assistant. Answer the user's question using only the provided context. If the context does not contain enough information, say so. When the user refers to something mentioned earlier in the conversation, use the conversation history to resolve the reference."
+
+### Conversation History
+
+The CLI maintains an in-memory list of conversation turns:
+- Each turn is a dict: `{"role": "user"|"assistant", "content": "..."}` 
+- Only plain Q&A is stored — chunk context is never added to history
+- History grows by 2 entries (user + assistant) per successful turn
+- History is passed to the LLM so Claude can reference prior answers
+- History is stored only when chunks are found and LLM generates an answer
 
 ### Error Handling
 
@@ -289,6 +352,52 @@ src/llm/
 cli.py                    # Main CLI entry point
 config/config.py          # Settings including anthropic_api_key
 ```
+
+---
+
+## Multi-Turn Conversation Behavior
+
+### How It Works
+
+The chatbot maintains conversation history across turns to enable natural multi-turn interactions:
+
+1. **Turn 1**: User asks a question → retrieved directly → answer stored in history
+2. **Turn 2+**: User asks a follow-up → query is rewritten → retrieval happens on the rewritten query → answer references history
+
+### Query Rewriting
+
+On turns 2 and beyond, vague follow-up questions are automatically rewritten before retrieval:
+
+| User Input | Rewritten Query (for retrieval) |
+|------------|--------------------------------|
+| "tell me more about the europe guide" | "Budget Travel Guide to Europe features and content" |
+| "what is the price?" | "Budget Travel Guide to Europe price cost GBP" |
+| "does it cover france?" | "Budget Travel Guide to Europe france destinations coverage" |
+
+The original user input is stored in history (natural phrasing), but the rewritten query improves vector search.
+
+### History Storage & Limits
+
+- History is stored **in-memory only** and is cleared when you exit the CLI
+- History grows by 2 entries (user + assistant) per successful turn
+- No artificial truncation is applied (Haiku has a 200k token context window)
+- History is only appended when `generate()` actually runs (if chunks are found)
+- If retrieval returns no chunks, that turn is skipped and not added to history
+
+### When History Helps
+
+Multi-turn conversation is most effective for:
+- Asking follow-ups to refine previous answers ("tell me more about", "what about")
+- Asking related questions that reference prior context ("what's the price of that book?")
+- Building on previous queries in the same session
+- Natural conversational flow without re-stating the full context each time
+
+### Limitations
+
+- History is **not persisted** between sessions (restarting the CLI clears history)
+- Query rewriting adds ~0.5–1s latency on turns 2+ (extra LLM API call)
+- If history becomes very long (100+ turns), token usage increases linearly
+- The original user query must still be reasonably clear for rewriting to work well
 
 ---
 
@@ -383,7 +492,12 @@ def display_chunks(chunks: list[dict]) -> None:
     """Formats and prints chunks to terminal."""
 
 def main() -> None:
-    """Runs the interactive REPL loop with LLM integration."""
+    """Runs the interactive REPL loop with multi-turn conversation support.
+    
+    Maintains an in-memory history list of {role, content} dicts.
+    For turn 2+, calls generator.rewrite_query() before retrieval.
+    Passes history to generator.generate() and stores the response.
+    """
 ```
 
 ### LLM Generator
@@ -397,8 +511,19 @@ class AnswerGenerator:
     def __init__(self, client: anthropic.Anthropic):
         """Initialize with an Anthropic client."""
         
-    def generate(self, query: str, chunks: list[dict]) -> None:
-        """Generate an LLM answer based on retrieved chunks."""
+    def rewrite_query(self, query: str, history: list[dict]) -> str:
+        """Rewrite a follow-up query into a standalone query using conversation history.
+        
+        Only called when history exists (turn 2+). Returns the rewritten query
+        or the original query if rewriting fails.
+        """
+        
+    def generate(self, query: str, chunks: list[dict], history: list[dict] | None = None) -> str:
+        """Generate an LLM answer based on retrieved chunks and conversation history.
+        
+        Returns the full answer text as a string (for storage in history).
+        history is optional and defaults to None.
+        """
 ```
 
 ### Dependencies
@@ -534,9 +659,23 @@ Query> [No LLM call made, as there's no context to work with]
 ## Contributing
 
 To extend the CLI:
-1. Edit `cli.py` at the project root for interface/orchestration changes
-2. Edit `src/llm/generator.py` for LLM behavior changes
-3. Keep concerns separated: retrieval, display, and generation
-4. Test with `uv run cli.py`
+1. Edit `cli.py` at the project root for:
+   - REPL loop changes (input handling, history management)
+   - Retrieval orchestration
+   - Display formatting
+2. Edit `src/llm/generator.py` for:
+   - LLM behavior changes (system prompts, models)
+   - Query rewriting logic (`rewrite_query()`)
+   - Answer generation logic (`generate()`)
+3. Keep concerns separated: retrieval, display, generation, and history management
+4. Test with `uv run cli.py` - verify both single-turn (turn 1) and multi-turn (turn 2+) behavior
+
+### Common Customizations
+
+- **Change the answer model**: Edit `model=` in both `rewrite_query()` and `generate()` methods
+- **Change max tokens**: Edit `max_tokens=` parameters in `src/llm/generator.py`
+- **Change system prompt**: Edit the `system=` parameter in `generate()` method
+- **Disable query rewriting**: Remove the `if history:` block in `cli.py` main loop
+- **Add persistent history**: Save/load history from a file before/after the REPL loop
 
 For bug reports or feature requests, see the project's contribution guidelines.
