@@ -25,47 +25,14 @@ def retrieve(query: str, top_k: int = 5) -> list[dict]:
         return []
 
 
-def truncate_url(url: str, max_len: int = 50) -> str:
-    """Truncate URL for display."""
-    if len(url) <= max_len:
-        return url
-    return url[: max_len - 3] + "..."
-
-
-def truncate_text(text: str, max_len: int = 80) -> str:
-    """Truncate text excerpt for display."""
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 3] + "..."
-
-
-def display_chunks(chunks: list[dict]) -> None:
-    """Display retrieved chunks in a readable format."""
-    if not chunks:
-        print("  No chunks found.\n")
-        return
-
-    for i, chunk in enumerate(chunks, 1):
-        score = chunk["score"]
-        title = chunk["page_title"]
-        url = truncate_url(chunk["source_url"])
-        text = truncate_text(chunk["text"])
-        price = chunk["price_gbp"]
-
-        price_str = f"£{price:.2f}" if price is not None else "(no price)"
-
-        print(f"  #{i}  [score: {score:.2f}]  {title}")
-        print(f"      {price_str}  |  {url}")
-        print(f'      "{text}"')
-        print()
-
-    print(f"  {len(chunks)} chunk{'s' if len(chunks) != 1 else ''} retrieved.\n")
-
-
 def main() -> None:
     """Run the interactive REPL."""
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
     generator = AnswerGenerator(client)
+
+    # In-memory conversation history. Each entry: {"role": "user"|"assistant", "content": str}
+    # Only plain Q&A is stored — no chunk context. Grows by 2 entries per turn.
+    history: list[dict] = []
 
     print("RAG Chatbot")
     print(f"Connected to {settings.api_base_url}")
@@ -88,10 +55,22 @@ def main() -> None:
             if query.lower() in ("exit", "quit"):
                 break
 
-            chunks = retrieve(query)
-            display_chunks(chunks)
+            # Rewrite the query for retrieval when there is prior history.
+            # On the first turn history is empty, so we skip rewriting entirely.
+            if history:
+                retrieval_query = generator.rewrite_query(query, history)
+            else:
+                retrieval_query = query
+
+            chunks = retrieve(retrieval_query)
+
             if chunks:
-                generator.generate(query, chunks)
+                # Generate using the ORIGINAL query + full history.
+                answer = generator.generate(query, chunks, history)
+
+                # Append original query and answer to history (plain Q&A only).
+                history.append({"role": "user", "content": query})
+                history.append({"role": "assistant", "content": answer})
 
     except KeyboardInterrupt:
         print("\n")
